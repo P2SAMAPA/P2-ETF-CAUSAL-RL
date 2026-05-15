@@ -81,7 +81,7 @@ CF_PENALTY_WT       = 0.20          # weight on counterfactual penalty in reward
 # ── RL environment ────────────────────────────────────────────────────────────
 ENV_WINDOW          = 21            # lookback window inside env state
 TRANSACTION_COST    = 0.0010        # 10bps per trade (one-way)
-REWARD_SCALING      = 10.0          # scale rewards for stable PPO training
+REWARD_SCALING      = 1.0           # scale rewards — sharpe_r already clipped to [-3,3]
 MAX_EPISODE_STEPS   = 252           # max steps per training episode (1 year)
 CASH_WEIGHT_MAX     = 0.40          # maximum CASH allocation in action space
 
