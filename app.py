@@ -77,12 +77,12 @@ with st.sidebar:
     st.markdown("## Settings")
     universe = st.selectbox("Universe", list(config.UNIVERSES.keys()))
     st.divider()
-    st.markdown(f"**LiNGAM window:** {config.LINGAM_WINDOW}d")
-    st.markdown(f"**LiNGAM refit:** every {config.LINGAM_REFIT_FREQ}d")
-    pcmci_w = (config.PCMCI_WINDOW_COMBINED if universe == "COMBINED"
-               else config.PCMCI_WINDOW)
+    st.markdown(f"**LiNGAM window:** {getattr(config, "LINGAM_WINDOW", getattr(config, "GRAPH_WINDOW", 252))}d")
+    st.markdown(f"**LiNGAM refit:** every {getattr(config, "LINGAM_REFIT_FREQ", getattr(config, "GRAPH_REFIT_FREQ", 63))}d")
+    pcmci_w = (getattr(config, "PCMCI_WINDOW_COMBINED", 1008) if universe == "COMBINED"
+               else getattr(config, "PCMCI_WINDOW", 504))
     st.markdown(f"**PCMCI+ window:** {pcmci_w}d")
-    st.markdown(f"**PCMCI+ refit:** every {config.PCMCI_REFIT_FREQ}d")
+    st.markdown(f"**PCMCI+ refit:** every {getattr(config, "PCMCI_REFIT_FREQ", 63)}d")
     st.markdown(f"**CF penalty:** {config.CF_PENALTY_WT}")
     st.markdown(f"**OOS from:** {config.OOS_START}")
     st.markdown(f"**Next trading day:** {next_trading_day()}")
@@ -341,7 +341,7 @@ def render_module_tabs(mod: dict, module_name: str, graph_window: int,
 
 # ── Main two-module tabs ──────────────────────────────────────────────────────
 tab_lingam, tab_pcmci = st.tabs([
-    f"🔬 Module A — LiNGAM ({config.LINGAM_WINDOW}d)",
+    f"🔬 Module A — LiNGAM ({getattr(config, "LINGAM_WINDOW", getattr(config, "GRAPH_WINDOW", 252))}d)",
     f"📡 Module B — PCMCI+ ({pcmci_w}d)",
 ])
 
@@ -351,13 +351,13 @@ with tab_lingam:
         "causal effects using non-Gaussian noise structure. Best for same-day macro "
         "impacts (e.g. Fed announcement → XLF on the same bar). Fast, 252-day rolling window."
     )
-    render_module_tabs(lingam_mod, "LiNGAM", config.LINGAM_WINDOW,
+    render_module_tabs(lingam_mod, "LiNGAM", getattr(config, "LINGAM_WINDOW", getattr(config, "GRAPH_WINDOW", 252)),
                        universe, "lingam")
 
 with tab_pcmci:
     st.markdown(
         f"**PCMCI+ (Momentary Conditional Independence)** — tests lagged causal "
-        f"links using partial correlation with lag up to {config.MAX_LAG}. Best for "
+        f"links using partial correlation with lag up to {getattr(config, "MAX_LAG", 2)}. Best for "
         f"multi-day causal transmission (e.g. VIX spike → XLE over 2 days). "
         f"Longer {pcmci_w}d window for statistical power."
     )
