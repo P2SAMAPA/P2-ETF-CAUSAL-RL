@@ -269,7 +269,8 @@ def train(
     )
 
     print(f"\n  ✅ Policy  → {config.HF_MODEL_REPO}/{config.CKPT_POLICY.format(slug=slug)}")
-    print(f"  ✅ Graph   → {config.HF_MODEL_REPO}/{config.CKPT_GRAPH.format(slug=slug)}")
+    print(f"  ✅ LiNGAM graph → {config.HF_MODEL_REPO}/{config.CKPT_GRAPH_LINGAM.format(slug=slug)}")
+    print(f"  ✅ PCMCI  graph → {config.HF_MODEL_REPO}/{config.CKPT_GRAPH_PCMCI.format(slug=slug)}")
     print(f"  ✅ Meta    → {config.HF_MODEL_REPO}/{config.CKPT_META.format(slug=slug)}")
 
 
