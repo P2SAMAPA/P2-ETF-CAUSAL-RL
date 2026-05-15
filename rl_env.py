@@ -110,7 +110,7 @@ class CausalRLEnv(gym.Env):
     # ── Observation builder ───────────────────────────────────────────────────
 
     def _get_obs(self) -> np.ndarray:
-        t = self._start + self._t
+        t = min(self._start + self._t, len(self.ret_arr) - 1)
 
         # 1. Interventional returns
         mac_dict = {
@@ -149,7 +149,7 @@ class CausalRLEnv(gym.Env):
         if seed is not None:
             self.rng = np.random.default_rng(seed)
 
-        min_start = config.ENV_WINDOW + config.GRAPH_WINDOW
+        min_start = config.ENV_WINDOW + max(config.LINGAM_WINDOW, config.ENV_WINDOW * 3)
         max_start = len(self.ret_arr) - config.MAX_EPISODE_STEPS - 1
 
         if self._fixed_start is not None:
@@ -172,7 +172,7 @@ class CausalRLEnv(gym.Env):
     def step(
         self, action: np.ndarray
     ) -> tuple[np.ndarray, float, bool, bool, dict]:
-        t = self._start + self._t
+        t = min(self._start + self._t, len(self.ret_arr) - 2)
 
         # ── Action → portfolio weights via softmax ────────────────────────────
         logits = action.astype(np.float64)
@@ -206,8 +206,9 @@ class CausalRLEnv(gym.Env):
         if len(self._returns_hist) > 21:
             vol = float(np.std(self._returns_hist[-21:])) + 1e-6
         else:
-            vol = 1e-6
-        sharpe_r = net_ret / vol
+            vol = max(abs(net_ret), 1e-4)   # use return magnitude as vol proxy early on
+        # Clamp sharpe_r to [-3, +3] to prevent exploding rewards on tiny windows
+        sharpe_r = float(np.clip(net_ret / vol, -3.0, 3.0))
 
         # ── Counterfactual penalty ────────────────────────────────────────────
         mac_dict = {
@@ -218,7 +219,9 @@ class CausalRLEnv(gym.Env):
             mac_dict, n_samples=config.CF_N_SAMPLES, rng=self.rng
         )                                                   # (CF_N_SAMPLES, n_etf)
         cf_port = float((cf_ir @ weights[:-1]).mean())      # mean CF portfolio return
-        cf_regret = max(0.0, cf_port - net_ret)
+        # Normalise CF regret to same scale as sharpe_r (divide by vol)
+        cf_regret_raw = max(0.0, cf_port - net_ret)
+        cf_regret = float(np.clip(cf_regret_raw / vol, 0.0, 3.0))
 
         reward = config.REWARD_SCALING * (
             sharpe_r - config.CF_PENALTY_WT * cf_regret
