@@ -1,0 +1,94 @@
+name: Causal RL Training (Manual)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Run MANUALLY to fit BOTH causal graphs and train the PPO policy.
+#
+# What this does per universe:
+#   1. Fit LiNGAM graph  on last 252 days of training data
+#   2. Fit PCMCI+ graph  on last 504d (FI/EQUITY) or 1008d (COMBINED)
+#   3. Train PPO actor-critic on LiNGAM causal state + CF reward shaping
+#   4. Save policy .pt + lingam graph .pkl + pcmci graph .pkl to HF model repo
+#
+# Recommended: weekly, or after any major regime change.
+# Triggers: GitHub → Actions → "Causal RL Training (Manual)" → Run workflow
+#
+# Runtime per universe:
+#   LiNGAM fit    : ~2-5 min  (fast, DirectLiNGAM)
+#   PCMCI+ fit    : ~10-30 min (conditional independence tests, depends on n_vars)
+#   PPO training  : ~30-60 min (200 updates x 512 rollout steps)
+#   Total         : ~45-90 min per universe
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      universe:
+        description: "Universe to train (ALL / EQUITY_SECTORS / FI_COMMODITIES / COMBINED)"
+        required: false
+        default: "ALL"
+      updates:
+        description: "Number of PPO update iterations (default: 200)"
+        required: false
+        default: "200"
+      pcmci_window:
+        description: "PCMCI+ window override in days (default: 504 for FI/EQ, 1008 for COMBINED)"
+        required: false
+        default: ""
+
+jobs:
+  causal-train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 480      # 8 hours — LiNGAM + PCMCI+ fit + PPO training
+
+    strategy:
+      matrix:
+        # Each universe runs independently in parallel
+        universe: [EQUITY_SECTORS, FI_COMMODITIES, COMBINED]
+      fail-fast: false        # don't cancel other universes if one fails
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install core dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install LiNGAM (causal graph discovery — Module A)
+        run: |
+          pip install lingam>=1.8.0 || echo "lingam install failed — will use Granger fallback"
+
+      - name: Install tigramite (PCMCI+ — Module B)
+        run: |
+          pip install tigramite>=5.2.0 || echo "tigramite install failed — will use Granger fallback for PCMCI module"
+
+      - name: Override PCMCI window if specified
+        if: github.event.inputs.pcmci_window != ''
+        run: |
+          sed -i "s/PCMCI_WINDOW\s*=.*/PCMCI_WINDOW = ${{ github.event.inputs.pcmci_window }}/" config.py
+          sed -i "s/PCMCI_WINDOW_COMBINED\s*=.*/PCMCI_WINDOW_COMBINED = ${{ github.event.inputs.pcmci_window }}/" config.py
+          echo "PCMCI window overridden to ${{ github.event.inputs.pcmci_window }}d"
+
+      - name: Run Causal RL training — ${{ matrix.universe }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python causal_trainer.py \
+            --universe ${{ matrix.universe }} \
+            --updates  ${{ github.event.inputs.updates || '200' }}
+
+      - name: Report results
+        if: always()
+        run: |
+          echo "=========================================="
+          echo "Training complete for ${{ matrix.universe }}"
+          echo "Artifacts saved to HF model repo:"
+          echo "  causal_rl_policy_${{ matrix.universe }}.pt"
+          echo "  causal_graph_lingam_${{ matrix.universe }}.pkl  (252d window)"
+          echo "  causal_graph_pcmci_${{ matrix.universe }}.pkl   (504d or 1008d window)"
+          echo "=========================================="

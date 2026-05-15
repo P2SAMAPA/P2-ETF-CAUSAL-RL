@@ -1,0 +1,72 @@
+name: Causal RL Daily Inference
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Runs automatically Mon-Fri after US market close.
+# Runs BOTH causal modules per universe:
+#   Module A — LiNGAM  (252d rolling window, instantaneous causality)
+#   Module B — PCMCI+  (504d/1008d rolling window, lagged causality)
+#
+# Each module pushes its own set of result files to HF:
+#   lingam_{universe}.csv  /  pcmci_{universe}.csv
+#   causal_rl_{date}_lingam_{universe}.json
+#   causal_rl_{date}_pcmci_{universe}.json
+#
+# Requires:
+#   - HF_TOKEN secret set in GitHub repo settings
+#   - Checkpoint trained via causal_train.yml (run that first)
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    - cron: "30 22 * * 1-5"    # 22:30 UTC Mon–Fri (after US close + buffer)
+  workflow_dispatch:
+    inputs:
+      universe:
+        description: "Universe (ALL / EQUITY_SECTORS / FI_COMMODITIES / COMBINED)"
+        required: false
+        default: "ALL"
+
+jobs:
+  daily-inference:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60        # Both modules run sequentially; PCMCI refit adds ~10 min
+
+    strategy:
+      matrix:
+        universe: [EQUITY_SECTORS, FI_COMMODITIES, COMBINED]
+      fail-fast: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install core dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install LiNGAM (Module A — instantaneous causality)
+        run: |
+          pip install lingam>=1.8.0 || echo "lingam unavailable — Granger fallback active"
+
+      - name: Install tigramite (Module B — PCMCI+ lagged causality)
+        run: |
+          pip install tigramite>=5.2.0 || echo "tigramite unavailable — Granger fallback active for PCMCI module"
+
+      - name: Run Causal RL dual inference — ${{ matrix.universe }}
+        env:
+          HF_TOKEN:           ${{ secrets.HF_TOKEN }}
+          CAUSAL_RL_UNIVERSE: ${{ matrix.universe }}
+        run: python trainer.py
+
+      - name: Report
+        if: always()
+        run: |
+          echo "Dual-module inference complete for ${{ matrix.universe }}"
+          echo "Results pushed:"
+          echo "  causal_rl_*_lingam_${{ matrix.universe }}.json  (LiNGAM 252d)"
+          echo "  causal_rl_*_pcmci_${{ matrix.universe }}.json   (PCMCI+ 504/1008d)"
